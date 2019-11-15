@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template for Provisioning an ECS Fargate Cluster
+Parameters:
+  Environment:
+    Type: String
+  DesiredCount:
+    Type: Number
+    Description: Desired number of tasks.
+  RepoUsername:
+     Type: String
+  RepoName:
+    Type: String
+  ApplicationImageTag:
+     Type: String
+     Description: Docker image version tag
+  CPU:
+     Type: Number
+     Description: Number of CPUs to be assigned to the container
+  MemoryAllocation:
+     Type: Number
+     Description: Softlimit  for the memory
+  ContainerPort:
+    Description: Port on which the application will startup inside the container
+    Type: Number
+  ECSClusterName:
+    Type: String
+    Description: Cluster Name
+  AppName:
+    Type: String
+  SecretName:
+    Type: String
+    Description: Secret Name for Docker hub credential storage
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to host the fargate service
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet to run the fargate service
+
+Resources:
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "python-flask-webapp-${Environment}-${AWS::AccountId}"
+      TaskRoleArn: !Join ['/', [!Join [":", ["arn:aws:iam:", !Ref "AWS::AccountId" ,"role"]] , !Ref RootRole] ]
+      ExecutionRoleArn: !Join ['/', [!Join [":", ["arn:aws:iam:", !Ref "AWS::AccountId" ,"role"]] , !Ref RootRole] ]
+      Memory: !Ref MemoryAllocation
+      Cpu: !Ref CPU
+      NetworkMode: awsvpc
+      ContainerDefinitions:
+        - Name: !Ref AppName
+          Image: !Join [ ":", [ !Join [ "/" , [!Ref RepoUsername, !Ref RepoName] ] , !Ref ApplicationImageTag] ]
+          RepositoryCredentials:
+            CredentialsParameter: !Join [ ":" ,[ "arn" , "aws" , "secretsmanager", !Ref "AWS::Region" , !Ref "AWS::AccountId", "secret", !Ref SecretName]]
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              HostPort: !Ref ContainerPort
+              Protocol: TCP
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: !Ref AWS::StackName
+          Environment:
+            - Name: env
+              Value: !Ref Environment
+            - Name: app_name
+              Value: !Ref AppName
+            - Name: region
+              Value: !Ref "AWS::Region"
+              
+  AssumeRolePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+              - "secretsmanager:GetSecretValue"
+            Resource: "*"
+      PolicyName: !Sub "${AppName}-${Environment}-task-policy"
+      Roles:
+        - !Ref RootRole
+
+  RootRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ecs-tasks.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      RoleName: !Sub "${AppName}-${Environment}-task-role"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${AWS::StackName}
+
+  FargateSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to the Fargate containers
+      VpcId: !Ref VPCId
+  FargateSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Ingress from the public on port #3000
+      GroupId: !Ref "FargateSecurityGroup"
+      IpProtocol: tcp
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      CidrIp: 0.0.0.0/0       # Please do not use this IP range in production
+  FargateSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Engress towards public.
+      GroupId: !Ref 'FargateSecurityGroup'
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 35535
+      CidrIp: 0.0.0.0/0     # Please do not use this IP range in production. 
+
+  FargateService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref TaskDefinition
+      LaunchType: FARGATE
+      ServiceName: !Sub "${AppName}-${Environment}-python-application"
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref FargateSecurityGroup
+          Subnets:
+            - !Ref SubnetId
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ECSClusterName

@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Template for running Application instance in container"
+
+Parameters:
+  Environment:
+    Type: String
+  DesiredCount:
+    Type: Number
+    Description: Desired number of tasks.
+  RepoUsername:
+    Type: String
+  RepoName:
+    Type: String
+  ApplicationImageTag:
+    Type: String
+    Description: Docker image version tag
+  CPU:
+    Type: Number
+    Description: Number of CPUs to be assigned to the container
+  MemoryAllocation:
+    Type: Number
+    Description: Softlimit  for the memory
+  ContainerPort:
+    Description: Port on which the application will startup inside the container
+    Type: Number
+  ECSClusterName:
+    Type: String
+    Description: Cluster Name
+  AppName:
+    Type: String
+  SecretName:
+    Type: String
+    Description: Secret Name for Docker hub credential storage
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to host the fargate service
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet to run the fargate service
+Resources:
+  CrudAppOnFargateStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: fargate.yml
+      Parameters:
+        Environment: !Ref Environment
+        DesiredCount: !Ref DesiredCount
+        RepoUsername: !Ref RepoUsername
+        RepoName: !Ref RepoName
+        ApplicationImageTag: !Ref ApplicationImageTag
+        CPU: !Ref CPU
+        MemoryAllocation: !Ref MemoryAllocation
+        ContainerPort: !Ref ContainerPort
+        ECSClusterName: !Ref ECSClusterName
+        AppName: !Ref AppName
+        VPCId: !Ref VPCId
+        SecretName: !Ref SecretName
+        SubnetId: !Ref SubnetId
