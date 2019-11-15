@@ -12,5 +12,5 @@ aws cloudformation package \
 aws cloudformation create-stack \
     --stack-name crudapp-fargate \
     --template-body file://mainstack-packaged.yml \
-    --parameters file://parameterfile-dev.json \
+    --parameters file://parameterfile-sandbox.json \
     --capabilities CAPABILITY_NAMED_IAM
